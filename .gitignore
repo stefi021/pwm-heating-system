@@ -1,1 +1,3 @@
+# Ignore STM32CubeIDE launch configurations
+*.launch
 Debug/
