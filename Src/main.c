@@ -26,10 +26,44 @@
   #warning "FPU is not initialized, but the project is compiling for an FPU. Please initialize the FPU before use."
 #endif
 
+#define USART_BUF_SIZE 6
+volatile uint8_t usart_buf[USART_BUF_SIZE];
+volatile uint8_t usart_index = 0;
+volatile uint8_t usart_packet_ready = 0;
+uint32_t SystemCoreClock = 64000000;
+
 void delay(uint32_t time) {
     for (uint32_t i = 0; i < time * 4000; i++) {
         __NOP(); // No Operation, samo da uspori
     }
+}
+
+void USART1_GPIO_Init(void)
+{
+    // PA9 (TX), PA10 (RX) => Alternate Function 7 (USART1)
+
+    // Set PA9, PA10 to alternate function
+    GPIOA->MODER &= ~((3U << (9 * 2)) | (3U << (10 * 2))); // Clear
+    GPIOA->MODER |=  (2U << (9 * 2)) | (2U << (10 * 2));   // Alternate function (10)
+
+    // Set AF7 (USART1) for PA9 and PA10
+    GPIOA->AFR[1] &= ~((0xF << ((9 - 8) * 4)) | (0xF << ((10 - 8) * 4))); // Clear
+    GPIOA->AFR[1] |=  (7 << ((9 - 8) * 4)) | (7 << ((10 - 8) * 4));       // AF7
+
+    // Optional: set speed, no pull-up/pull-down
+    GPIOA->OSPEEDR |= (2U << (9 * 2)) | (2U << (10 * 2)); // High speed
+    GPIOA->PUPDR &= ~((3U << (9 * 2)) | (3U << (10 * 2))); // No pull
+}
+
+void USART1_Init(void)
+{
+    USART1->BRR = (SystemCoreClock / 115200); // Baudrate 115200 (ako je clock 64 MHz)
+
+    USART1->CR1 |= USART_CR1_RE;   // Enable Receiver
+    USART1->CR1 |= USART_CR1_RXNEIE; // Enable RX interrupt
+    USART1->CR1 |= USART_CR1_UE;   // Enable USART
+
+    NVIC_EnableIRQ(USART1_IRQn);
 }
 
 void LED_Init(void)
@@ -120,14 +154,42 @@ void TIM5_IRQHandler(void)
     }
 }
 
+void USART1_IRQHandler(void)
+{
+    if (USART1->SR & USART_SR_RXNE)
+    {
+        uint8_t byte = USART1->DR; // Read received byte
+
+        if (!usart_packet_ready)
+        {
+            usart_buf[usart_index++] = byte;
+            if (usart_index == USART_BUF_SIZE)
+            {
+                usart_index = 0;
+                usart_packet_ready = 1; // Signal main loop
+            }
+        }
+    }
+}
+
 int main(void) {
     SystemClock_Config();
     TIM5_Init();
     LED_Init();
+    RCC->APB2ENR |= RCC_APB2ENR_USART1EN;
+    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;
+    USART1_GPIO_Init();
+    USART1_Init();
 
 //	INIT_GREEN_LED();
 
     while (1) {
+        if (usart_packet_ready)
+        {
+            usart_packet_ready = 0;
 
+            // Ovde obradi paket iz usart_buf[0] ... [5]
+            GPIOA->ODR ^= GPIO_ODR_OD5; // Blink za test
+        }
     }
 }
