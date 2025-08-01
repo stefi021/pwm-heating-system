@@ -20,7 +20,8 @@
 
 
 #include "stm32f4xx.h"
-#include "led.h"
+
+#include "green_led.h"
 
 #if !defined(__SOFT_FP__) && defined(__ARM_FP)
   #warning "FPU is not initialized, but the project is compiling for an FPU. Please initialize the FPU before use."
@@ -38,8 +39,7 @@ void delay(uint32_t time) {
     }
 }
 
-void USART1_GPIO_Init(void)
-{
+void USART1_GPIO_Init(void) {
     // PA9 (TX), PA10 (RX) => Alternate Function 7 (USART1)
 
     // Set PA9, PA10 to alternate function
@@ -55,35 +55,19 @@ void USART1_GPIO_Init(void)
     GPIOA->PUPDR &= ~((3U << (9 * 2)) | (3U << (10 * 2))); // No pull
 }
 
-void USART1_Init(void)
-{
-    USART1->BRR = (SystemCoreClock / 115200); // Baudrate 115200 (ako je clock 64 MHz)
+void USART1_Init(void) {
 
-    USART1->CR1 |= USART_CR1_RE;   // Enable Receiver
-    USART1->CR1 |= USART_CR1_RXNEIE; // Enable RX interrupt
-    USART1->CR1 |= USART_CR1_UE;   // Enable USART
+    RCC->APB2ENR |= RCC_APB2ENR_USART1EN;
+    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;
+    USART1->BRR = (SystemCoreClock / 115200);
+
+    USART1->CR1 |= USART_CR1_RE;
+    /* Enable RX interrupt */
+    USART1->CR1 |= USART_CR1_RXNEIE;
+    /* Enable USART */
+    USART1->CR1 |= USART_CR1_UE;
 
     NVIC_EnableIRQ(USART1_IRQn);
-}
-
-void LED_Init(void)
-{
-    // 1. Enable GPIOA clock
-    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;
-
-    // 2. Set PA5 as general purpose output
-    GPIOA->MODER &= ~(3U << (5 * 2)); // Clear mode bits for PA5
-    GPIOA->MODER |= (1U << (5 * 2));  // Set PA5 to Output mode (01)
-
-    // 3. Optional: Set output type to push-pull (default)
-    GPIOA->OTYPER &= ~(1U << 5);
-
-    // 4. Optional: Set output speed (medium)
-    GPIOA->OSPEEDR &= ~(3U << (5 * 2));
-    GPIOA->OSPEEDR |= (1U << (5 * 2));
-
-    // 5. Optional: Disable pull-up/pull-down
-    GPIOA->PUPDR &= ~(3U << (5 * 2));
 }
 
 void SystemClock_Config(void)
@@ -139,6 +123,7 @@ void TIM5_Init(void)
 
 // Your timer 5 interrupt handler
 volatile uint32_t msTicks = 0;
+
 void TIM5_IRQHandler(void)
 {
     if (TIM5->SR & TIM_SR_UIF)
@@ -176,12 +161,8 @@ int main(void) {
     SystemClock_Config();
     TIM5_Init();
     LED_Init();
-    RCC->APB2ENR |= RCC_APB2ENR_USART1EN;
-    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;
     USART1_GPIO_Init();
     USART1_Init();
-
-//	INIT_GREEN_LED();
 
     while (1) {
         if (usart_packet_ready)
